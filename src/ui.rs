@@ -308,11 +308,36 @@ fn draw_details_panel(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
+    let help_line = if area.width >= 90 {
+        Line::from(vec![
+            Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Search | "),
+            Span::styled("<Escx2>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Clear | "),
+            Span::styled("<Tab>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Focus | "),
+            Span::styled("<Ctrl+Cx2>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" / "),
+            Span::styled("/quit", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Exit "),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Search | "),
+            Span::styled("<Escx2>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Clear | "),
+            Span::styled("/quit", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" Exit "),
+        ])
+    };
+
+    let help_width = (help_line.width() as u16).min(area.width);
     let footer_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(55),
-            Constraint::Percentage(45),
+            Constraint::Min(10),
+            Constraint::Length(help_width),
         ])
         .split(area);
 
@@ -330,17 +355,6 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::Cyan),
         ),
         Span::styled(&app.status_message, status_style),
-    ]);
-
-    let help_line = Line::from(vec![
-        Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Search | "),
-        Span::styled("<↑/↓>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Select | "),
-        Span::styled("<Tab>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Focus | "),
-        Span::styled("<Esc>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Exit "),
     ]);
 
     let status_p = Paragraph::new(status_line);

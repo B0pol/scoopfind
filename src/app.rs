@@ -1,3 +1,4 @@
+use std::time::Instant;
 use crate::models::ScoopPackage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +21,7 @@ pub struct App {
     pub is_loading: bool,
     /// Informational message displayed in the footer
     pub status_message: String,
-    /// Set to true when the user requests to quit (Esc, Ctrl+C, or 'q' outside input)
+    /// Set to true when the user requests to quit (double Ctrl+C or /quit or /exit)
     pub should_quit: bool,
     /// Active UI focus
     pub focus: Focus,
@@ -28,6 +29,10 @@ pub struct App {
     pub page: usize,
     /// Notification if Milestone 5 key refresh occurred
     pub key_refreshed: bool,
+    /// Timestamp of last Esc press for double-tap detection
+    pub last_esc_time: Option<Instant>,
+    /// Timestamp of last Ctrl+C press for double-tap detection
+    pub last_ctrl_c_time: Option<Instant>,
 }
 
 impl Default for App {
@@ -49,6 +54,8 @@ impl App {
             focus: Focus::SearchInput,
             page: 1,
             key_refreshed: false,
+            last_esc_time: None,
+            last_ctrl_c_time: None,
         }
     }
 
@@ -134,5 +141,100 @@ impl App {
     pub fn set_error(&mut self, error: String) {
         self.is_loading = false;
         self.status_message = format!("Error: {}", error);
+    }
+
+    /// Handles Esc press:
+    /// - If outside search bar: switches focus to search bar.
+    /// - If double Esc (within 500ms): clears the search query.
+    pub fn handle_escape(&mut self) {
+        let now = Instant::now();
+        let is_double_esc = self
+            .last_esc_time
+            .map(|t| now.duration_since(t).as_millis() <= 500)
+            .unwrap_or(false);
+
+        self.last_esc_time = Some(now);
+
+        if self.focus != Focus::SearchInput {
+            self.focus = Focus::SearchInput;
+        }
+
+        if is_double_esc {
+            self.clear_query();
+            self.status_message = "Search query cleared.".to_string();
+        }
+    }
+
+    /// Handles Ctrl+C press:
+    /// - First press: shows warning "Press Ctrl+C again to quit"
+    /// - Second press within 1500ms: sets should_quit = true
+    pub fn handle_ctrl_c(&mut self) {
+        let now = Instant::now();
+        let is_double_ctrl_c = self
+            .last_ctrl_c_time
+            .map(|t| now.duration_since(t).as_millis() <= 1500)
+            .unwrap_or(false);
+
+        if is_double_ctrl_c {
+            self.should_quit = true;
+        } else {
+            self.last_ctrl_c_time = Some(now);
+            self.status_message = "Press Ctrl+C again to quit.".to_string();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_escape_focus_and_double_escape_clear() {
+        let mut app = App::new();
+        app.focus = Focus::ResultsList;
+        app.query = "ripgrep".to_string();
+        app.cursor_position = 7;
+
+        // First Esc: returns to SearchInput, does NOT clear query
+        app.handle_escape();
+        assert_eq!(app.focus, Focus::SearchInput);
+        assert_eq!(app.query, "ripgrep");
+
+        // Second Esc immediately: double Esc clears query
+        app.handle_escape();
+        assert_eq!(app.query, "");
+        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.status_message, "Search query cleared.");
+    }
+
+    #[test]
+    fn test_ctrl_c_double_tap_quit() {
+        let mut app = App::new();
+
+        // First Ctrl+C: prompts without quitting
+        app.handle_ctrl_c();
+        assert!(!app.should_quit);
+        assert_eq!(app.status_message, "Press Ctrl+C again to quit.");
+
+        // Second Ctrl+C immediately: sets should_quit to true
+        app.handle_ctrl_c();
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn test_ctrl_c_timeout_resets() {
+        let mut app = App::new();
+
+        // First Ctrl+C
+        app.handle_ctrl_c();
+        assert!(!app.should_quit);
+
+        // Simulate elapsed time > 1500ms
+        app.last_ctrl_c_time = Some(Instant::now() - Duration::from_millis(2000));
+
+        // Another Ctrl+C after timeout: does NOT quit, prompts again
+        app.handle_ctrl_c();
+        assert!(!app.should_quit);
     }
 }

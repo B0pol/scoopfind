@@ -81,19 +81,15 @@ async fn main() -> Result<()> {
         if event::poll(Duration::from_millis(30))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    // Global exit shortcut
+                    // Global exit shortcut: requires double Ctrl+C to quit
                     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                        app.should_quit = true;
-                        break;
+                        app.handle_ctrl_c();
+                        continue;
                     }
 
                     match key.code {
                         KeyCode::Esc => {
-                            if app.focus != Focus::SearchInput {
-                                app.focus = Focus::SearchInput;
-                            } else {
-                                app.should_quit = true;
-                            }
+                            app.handle_escape();
                         }
                         KeyCode::Tab => {
                             app.focus = match app.focus {
@@ -162,6 +158,11 @@ fn handle_search_input_keys(
         }
         KeyCode::Enter => {
             let trimmed = app.query.trim().to_string();
+            // Exit commands
+            if trimmed.eq_ignore_ascii_case("/quit") || trimmed.eq_ignore_ascii_case("/exit") {
+                app.should_quit = true;
+                return;
+            }
             if !trimmed.is_empty() {
                 app.is_loading = true;
                 app.status_message = format!("Searching for \"{}\" in Scoop index...", trimmed);
@@ -193,9 +194,6 @@ fn handle_results_list_keys(app: &mut App, code: KeyCode) {
         KeyCode::Char('/') | KeyCode::Char('i') => {
             app.focus = Focus::SearchInput;
         }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
-        }
         _ => {}
     }
 }
@@ -207,9 +205,6 @@ fn handle_detail_pane_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Left | KeyCode::Char('h') => {
             app.focus = Focus::ResultsList;
-        }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
         }
         _ => {}
     }
