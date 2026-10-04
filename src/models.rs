@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Represents the top-level response envelope from Azure Cognitive Search
@@ -105,5 +106,176 @@ impl ScoopPackage {
                 bucket, self.metadata.repository, bucket, self.name
             )
         }
+    }
+
+    /// Parses the ISO 8601 committed timestamp from Azure Search
+    pub fn committed_datetime(&self) -> Option<DateTime<Utc>> {
+        self.metadata.committed.as_deref().and_then(|s| {
+            DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc))
+        })
+    }
+
+    /// Full UTC timestamp: "YYYY-MM-DD HH:MM UTC"
+    pub fn full_datetime_utc(&self) -> String {
+        if let Some(ref date_str) = self.metadata.committed {
+            if date_str.len() >= 16 {
+                let date_part = &date_str[..10];
+                let time_part = &date_str[11..16];
+                return format!("{} {} UTC", date_part, time_part);
+            }
+            return date_str.clone();
+        }
+        "Unknown".to_string()
+    }
+
+    /// Ultra-short relative age for list view (e.g. "now", "4h", "12d", "2mo", "1y")
+    pub fn short_relative_age(&self) -> String {
+        let Some(dt) = self.committed_datetime() else {
+            return "-".to_string();
+        };
+
+        let now = Utc::now();
+        Self::format_short_relative_age(dt, now)
+    }
+
+    pub fn format_short_relative_age(dt: DateTime<Utc>, now: DateTime<Utc>) -> String {
+        let duration = now.signed_duration_since(dt);
+        let total_seconds = duration.num_seconds();
+        if total_seconds < 3600 {
+            return "now".to_string();
+        }
+
+        let total_hours = total_seconds / 3600;
+        if total_hours < 24 {
+            return format!("{}h", total_hours);
+        }
+
+        let total_days = total_hours / 24;
+        if total_days < 30 {
+            return format!("{}d", total_days);
+        }
+
+        if total_days < 365 {
+            let months = total_days / 30;
+            return format!("{}mo", months);
+        }
+
+        let years = total_days / 365;
+        format!("{}y", years)
+    }
+
+    /// Full dynamic relative age for details pane:
+    /// - "x hours ago"
+    /// - "x days ago"
+    /// - "x months x days ago"
+    /// - "x years x months ago"
+    pub fn full_relative_age(&self) -> String {
+        let Some(dt) = self.committed_datetime() else {
+            return "unknown".to_string();
+        };
+
+        let now = Utc::now();
+        Self::format_full_relative_age(dt, now)
+    }
+
+    pub fn format_full_relative_age(dt: DateTime<Utc>, now: DateTime<Utc>) -> String {
+        let duration = now.signed_duration_since(dt);
+        let total_seconds = duration.num_seconds();
+
+        if total_seconds < 0 {
+            return "just now".to_string();
+        }
+
+        let total_minutes = total_seconds / 60;
+        let total_hours = total_minutes / 60;
+        let total_days = total_hours / 24;
+
+        if total_minutes < 60 {
+            if total_minutes <= 1 {
+                "just now".to_string()
+            } else {
+                format!("{} minutes ago", total_minutes)
+            }
+        } else if total_hours < 24 {
+            let unit = if total_hours == 1 { "hour" } else { "hours" };
+            format!("{} {} ago", total_hours, unit)
+        } else if total_days < 30 {
+            let unit = if total_days == 1 { "day" } else { "days" };
+            format!("{} {} ago", total_days, unit)
+        } else if total_days < 365 {
+            let months = total_days / 30;
+            let days = total_days % 30;
+            let m_unit = if months == 1 { "month" } else { "months" };
+            if days == 0 {
+                format!("{} {} ago", months, m_unit)
+            } else {
+                let d_unit = if days == 1 { "day" } else { "days" };
+                format!("{} {} {} {} ago", months, m_unit, days, d_unit)
+            }
+        } else {
+            let years = total_days / 365;
+            let remaining_days = total_days % 365;
+            let months = remaining_days / 30;
+            let y_unit = if years == 1 { "year" } else { "years" };
+            if months == 0 {
+                format!("{} {} ago", years, y_unit)
+            } else {
+                let m_unit = if months == 1 { "month" } else { "months" };
+                format!("{} {} {} {} ago", years, y_unit, months, m_unit)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn test_short_relative_age_formatting() {
+        let now = Utc::now();
+
+        // 30 mins ago -> now
+        assert_eq!(ScoopPackage::format_short_relative_age(now - Duration::minutes(30), now), "now");
+        // 4 hours ago -> 4h
+        assert_eq!(ScoopPackage::format_short_relative_age(now - Duration::hours(4), now), "4h");
+        // 12 days ago -> 12d
+        assert_eq!(ScoopPackage::format_short_relative_age(now - Duration::days(12), now), "12d");
+        // 70 days ago -> 2mo
+        assert_eq!(ScoopPackage::format_short_relative_age(now - Duration::days(70), now), "2mo");
+        // 400 days ago -> 1y
+        assert_eq!(ScoopPackage::format_short_relative_age(now - Duration::days(400), now), "1y");
+    }
+
+    #[test]
+    fn test_full_relative_age_formatting() {
+        let now = Utc::now();
+
+        // 5 hours ago
+        assert_eq!(
+            ScoopPackage::format_full_relative_age(now - Duration::hours(5), now),
+            "5 hours ago"
+        );
+        // 1 day ago
+        assert_eq!(
+            ScoopPackage::format_full_relative_age(now - Duration::days(1), now),
+            "1 day ago"
+        );
+        // 15 days ago
+        assert_eq!(
+            ScoopPackage::format_full_relative_age(now - Duration::days(15), now),
+            "15 days ago"
+        );
+        // 2 months 5 days ago (65 days)
+        assert_eq!(
+            ScoopPackage::format_full_relative_age(now - Duration::days(65), now),
+            "2 months 5 days ago"
+        );
+        // 1 year 3 months ago (365 + 95 days)
+        assert_eq!(
+            ScoopPackage::format_full_relative_age(now - Duration::days(460), now),
+            "1 year 3 months ago"
+        );
     }
 }

@@ -145,16 +145,21 @@ fn draw_results_list(frame: &mut Frame, app: &App, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(prefix, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    format!("{:<18}", pkg.name),
+                    format!("{:<16}", pkg.name),
                     Style::default()
                         .fg(if is_selected { Color::White } else { Color::Cyan })
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("v{:<10}", pkg.version),
+                    format!("v{:<8}", pkg.version),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(format!("[{}]", bucket), bucket_style),
+                Span::raw(" "),
+                Span::styled(
+                    format!("{:<4}", pkg.short_relative_age()),
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(stars_display, Style::default().fg(Color::Yellow)),
             ]);
 
@@ -251,6 +256,20 @@ fn draw_details_panel(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(vec![
             Span::styled("License:     ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(license, Style::default().fg(Color::White)),
+        ]));
+    }
+
+    // Updated Date & Relative Age
+    let updated_info = format!("{} ({})", pkg.full_datetime_utc(), pkg.full_relative_age());
+    lines.push(Line::from(vec![
+        Span::styled("Updated:     ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(updated_info, Style::default().fg(Color::White)),
+    ]));
+
+    if let Some(sha) = &pkg.metadata.sha {
+        lines.push(Line::from(vec![
+            Span::styled("Commit SHA:  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(sha, Style::default().fg(Color::DarkGray)),
         ]));
     }
 
