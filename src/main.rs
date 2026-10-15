@@ -29,8 +29,77 @@ struct WorkerResponse {
     key_refreshed: bool,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CliAction {
+    Version,
+    Help,
+    Run { initial_query: Option<String> },
+}
+
+pub fn parse_args<I, T>(args: I) -> Result<CliAction, String>
+where
+    I: IntoIterator<Item = T>,
+    T: AsRef<str>,
+{
+    let mut query_parts = Vec::new();
+    let mut iter = args.into_iter().skip(1);
+
+    while let Some(arg) = iter.next() {
+        match arg.as_ref() {
+            "-v" | "--version" => return Ok(CliAction::Version),
+            "-h" | "--help" => return Ok(CliAction::Help),
+            s if s.starts_with('-') => {
+                return Err(format!("unexpected argument '{}'. For more information, try '--help'", s));
+            }
+            s => {
+                query_parts.push(s.to_string());
+            }
+        }
+    }
+
+    let initial_query = if query_parts.is_empty() {
+        None
+    } else {
+        Some(query_parts.join(" "))
+    };
+
+    Ok(CliAction::Run { initial_query })
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    match parse_args(std::env::args()) {
+        Ok(CliAction::Version) => {
+            println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Ok(CliAction::Help) => {
+            println!(
+                "{} {}\n\
+                 Interactive TUI search for Scoop packages\n\n\
+                 USAGE:\n    \
+                 scoopfind [OPTIONS] [QUERY]\n\n\
+                 ARGS:\n    \
+                 <QUERY>    Initial search query\n\n\
+                 OPTIONS:\n    \
+                 -h, --help       Print help information\n    \
+                 -v, --version    Print version information",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION")
+            );
+            return Ok(());
+        }
+        Err(err) => {
+            eprintln!("error: {}", err);
+            std::process::exit(1);
+        }
+        Ok(CliAction::Run { initial_query }) => {
+            run_tui(initial_query).await
+        }
+    }
+}
+
+async fn run_tui(initial_query: Option<String>) -> Result<()> {
     // 1. Setup panic hook to always restore terminal on abnormal exit
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -71,6 +140,20 @@ async fn main() -> Result<()> {
     });
 
     let mut app = App::new();
+    if let Some(query) = initial_query {
+        let trimmed = query.trim().to_string();
+        if !trimmed.is_empty() {
+            app.query = trimmed.clone();
+            app.cursor_position = app.query.chars().count();
+            app.is_loading = true;
+            app.status_message = format!("Searching for \"{}\" in Scoop index...", trimmed);
+            let _ = req_tx.send(WorkerRequest::Search {
+                query: trimmed,
+                top: 50,
+                skip: 0,
+            });
+        }
+    }
 
     // 5. Main TUI Event Loop
     while !app.should_quit {
@@ -209,3 +292,50 @@ fn handle_detail_pane_keys(app: &mut App, code: KeyCode) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_args_version() {
+        assert_eq!(parse_args(["scoopfind", "--version"]), Ok(CliAction::Version));
+        assert_eq!(parse_args(["scoopfind", "-v"]), Ok(CliAction::Version));
+    }
+
+    #[test]
+    fn test_parse_args_help() {
+        assert_eq!(parse_args(["scoopfind", "--help"]), Ok(CliAction::Help));
+        assert_eq!(parse_args(["scoopfind", "-h"]), Ok(CliAction::Help));
+    }
+
+    #[test]
+    fn test_parse_args_query() {
+        assert_eq!(
+            parse_args(["scoopfind", "git"]),
+            Ok(CliAction::Run {
+                initial_query: Some("git".to_string())
+            })
+        );
+        assert_eq!(
+            parse_args(["scoopfind", "ripgrep", "search"]),
+            Ok(CliAction::Run {
+                initial_query: Some("ripgrep search".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_args_empty() {
+        assert_eq!(
+            parse_args(["scoopfind"]),
+            Ok(CliAction::Run { initial_query: None })
+        );
+    }
+
+    #[test]
+    fn test_parse_args_unknown_flag() {
+        assert!(parse_args(["scoopfind", "--unknown"]).is_err());
+    }
+}
+
