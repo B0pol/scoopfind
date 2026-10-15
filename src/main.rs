@@ -16,7 +16,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
-use crate::app::{App, Focus};
+use crate::app::{App, ConfirmButton, Focus};
 use crate::models::ScoopPackage;
 
 enum WorkerRequest {
@@ -170,6 +170,31 @@ async fn run_tui(initial_query: Option<String>) -> Result<()> {
                         continue;
                     }
 
+                    // Handle keys when confirmation modal is open
+                    if app.confirming_install.is_some() {
+                        match key.code {
+                            KeyCode::Enter => {
+                                app.confirm_install();
+                            }
+                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                app.confirm_button = ConfirmButton::Install;
+                                app.confirm_install();
+                            }
+                            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                                app.cancel_install();
+                            }
+                            KeyCode::Tab
+                            | KeyCode::Left
+                            | KeyCode::Right
+                            | KeyCode::Char('h')
+                            | KeyCode::Char('l') => {
+                                app.toggle_confirm_button();
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     match key.code {
                         KeyCode::Esc => {
                             app.handle_escape();
@@ -203,6 +228,37 @@ async fn run_tui(initial_query: Option<String>) -> Result<()> {
                 match response.result {
                     Ok(packages) => app.set_results(packages, response.key_refreshed),
                     Err(e) => app.set_error(format!("{:#}", e)),
+                }
+            }
+        }
+
+        // If a package was confirmed for installation, run the install interactively
+        if let Some(pkg) = app.pending_install.take() {
+            disable_raw_mode()?;
+            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+            terminal.show_cursor()?;
+
+            let install_cmd = pkg.install_command();
+            let result = run_scoop_install(&pkg, &install_cmd);
+
+            enable_raw_mode()?;
+            execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+            terminal.clear()?;
+
+            // Drain any pending input events from the console
+            while event::poll(Duration::from_millis(0))? {
+                let _ = event::read()?;
+            }
+
+            match result {
+                Ok(code) if code == 0 => {
+                    app.status_message = format!("Package '{}' installed successfully!", pkg.name);
+                }
+                Ok(code) => {
+                    app.status_message = format!("Installation of '{}' completed with exit code {}.", pkg.name, code);
+                }
+                Err(err) => {
+                    app.status_message = format!("Failed to run Scoop installation: {:#}", err);
                 }
             }
         }
@@ -262,6 +318,9 @@ fn handle_search_input_keys(
 
 fn handle_results_list_keys(app: &mut App, code: KeyCode) {
     match code {
+        KeyCode::Enter => {
+            app.prompt_install();
+        }
         KeyCode::Up | KeyCode::Char('k') => {
             app.select_previous();
         }
@@ -283,6 +342,9 @@ fn handle_results_list_keys(app: &mut App, code: KeyCode) {
 
 fn handle_detail_pane_keys(app: &mut App, code: KeyCode) {
     match code {
+        KeyCode::Enter => {
+            app.prompt_install();
+        }
         KeyCode::Char('/') | KeyCode::Char('i') => {
             app.focus = Focus::SearchInput;
         }
@@ -291,6 +353,47 @@ fn handle_detail_pane_keys(app: &mut App, code: KeyCode) {
         }
         _ => {}
     }
+}
+
+fn run_scoop_install(pkg: &ScoopPackage, install_cmd: &str) -> anyhow::Result<i32> {
+    println!();
+    println!("============================================================");
+    println!(" ScoopFind: Installing {} (v{})", pkg.name, pkg.version);
+    println!(" Bucket:    {}", pkg.bucket_name());
+    println!(" Command:   {}", install_cmd);
+    println!("============================================================");
+    println!();
+
+    #[cfg(windows)]
+    let mut cmd = std::process::Command::new("powershell");
+    #[cfg(windows)]
+    cmd.args(["-NoLogo", "-ExecutionPolicy", "Bypass", "-Command", install_cmd]);
+
+    #[cfg(not(windows))]
+    let mut cmd = std::process::Command::new("sh");
+    #[cfg(not(windows))]
+    cmd.args(["-c", install_cmd]);
+
+    cmd.stdin(std::process::Stdio::inherit());
+    cmd.stdout(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::inherit());
+
+    let status = cmd.status()?;
+    let exit_code = status.code().unwrap_or(-1);
+
+    println!();
+    println!("------------------------------------------------------------");
+    if exit_code == 0 {
+        println!("Package '{}' installed successfully.", pkg.name);
+    } else {
+        println!("Scoop command exited with code {}.", exit_code);
+    }
+    println!("Press <Enter> to return to scoopfind...");
+
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+
+    Ok(exit_code)
 }
 
 #[cfg(test)]

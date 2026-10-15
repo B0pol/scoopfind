@@ -8,6 +8,12 @@ pub enum Focus {
     DetailPane,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmButton {
+    Install,
+    Cancel,
+}
+
 pub struct App {
     /// Current search query string typed by the user
     pub query: String,
@@ -33,6 +39,12 @@ pub struct App {
     pub last_esc_time: Option<Instant>,
     /// Timestamp of last Ctrl+C press for double-tap detection
     pub last_ctrl_c_time: Option<Instant>,
+    /// Package currently pending confirmation in the install modal dialog
+    pub confirming_install: Option<ScoopPackage>,
+    /// Currently focused button in the confirmation modal
+    pub confirm_button: ConfirmButton,
+    /// Package queued for installation after user confirmation
+    pub pending_install: Option<ScoopPackage>,
 }
 
 impl Default for App {
@@ -56,6 +68,9 @@ impl App {
             key_refreshed: false,
             last_esc_time: None,
             last_ctrl_c_time: None,
+            confirming_install: None,
+            confirm_button: ConfirmButton::Install,
+            pending_install: None,
         }
     }
 
@@ -182,12 +197,70 @@ impl App {
             self.status_message = "Press Ctrl+C again to quit.".to_string();
         }
     }
+
+    /// Opens the confirmation modal for the currently selected package.
+    pub fn prompt_install(&mut self) {
+        if let Some(pkg) = self.selected_package().cloned() {
+            self.status_message = format!("Install '{}'? Press <Enter> to confirm or <Esc> to cancel.", pkg.name);
+            self.confirming_install = Some(pkg);
+            self.confirm_button = ConfirmButton::Install;
+        }
+    }
+
+    /// Confirms or cancels based on the currently selected button in the modal.
+    pub fn confirm_install(&mut self) {
+        if let Some(pkg) = self.confirming_install.take() {
+            match self.confirm_button {
+                ConfirmButton::Install => {
+                    self.pending_install = Some(pkg);
+                }
+                ConfirmButton::Cancel => {
+                    self.status_message = "Installation cancelled.".to_string();
+                }
+            }
+        }
+    }
+
+    /// Cancels installation and closes the modal.
+    pub fn cancel_install(&mut self) {
+        self.confirming_install = None;
+        self.status_message = "Installation cancelled.".to_string();
+    }
+
+    /// Toggles between the Install and Cancel buttons in the modal.
+    pub fn toggle_confirm_button(&mut self) {
+        self.confirm_button = match self.confirm_button {
+            ConfirmButton::Install => ConfirmButton::Cancel,
+            ConfirmButton::Cancel => ConfirmButton::Install,
+        };
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+    use crate::models::PackageMetadata;
+
+    fn sample_package(name: &str) -> ScoopPackage {
+        ScoopPackage {
+            id: name.to_string(),
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            description: Some("Test description".to_string()),
+            homepage: None,
+            license: None,
+            notes: None,
+            metadata: PackageMetadata {
+                repository: "https://github.com/ScoopInstaller/Main".to_string(),
+                official_repository: true,
+                repository_stars: None,
+                file_path: format!("bucket/{}.json", name),
+                committed: None,
+                sha: None,
+            },
+        }
+    }
 
     #[test]
     fn test_escape_focus_and_double_escape_clear() {
@@ -236,5 +309,57 @@ mod tests {
         // Another Ctrl+C after timeout: does NOT quit, prompts again
         app.handle_ctrl_c();
         assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn test_install_confirmation_flow() {
+        let mut app = App::new();
+        app.results = vec![sample_package("neovim")];
+        app.selected_index = 0;
+
+        // Prompt install opens modal
+        app.prompt_install();
+        assert!(app.confirming_install.is_some());
+        assert_eq!(app.confirming_install.as_ref().unwrap().name, "neovim");
+        assert_eq!(app.confirm_button, ConfirmButton::Install);
+
+        // Confirming with button Install queues for execution
+        app.confirm_install();
+        assert!(app.confirming_install.is_none());
+        assert!(app.pending_install.is_some());
+        assert_eq!(app.pending_install.as_ref().unwrap().name, "neovim");
+    }
+
+    #[test]
+    fn test_install_cancellation_flow() {
+        let mut app = App::new();
+        app.results = vec![sample_package("ripgrep")];
+        app.selected_index = 0;
+
+        app.prompt_install();
+        assert!(app.confirming_install.is_some());
+
+        // Cancel closes modal without pending install
+        app.cancel_install();
+        assert!(app.confirming_install.is_none());
+        assert!(app.pending_install.is_none());
+        assert_eq!(app.status_message, "Installation cancelled.");
+    }
+
+    #[test]
+    fn test_toggle_confirm_button() {
+        let mut app = App::new();
+        app.results = vec![sample_package("git")];
+        app.prompt_install();
+
+        assert_eq!(app.confirm_button, ConfirmButton::Install);
+        app.toggle_confirm_button();
+        assert_eq!(app.confirm_button, ConfirmButton::Cancel);
+
+        // Confirming while on Cancel button cancels installation
+        app.confirm_install();
+        assert!(app.confirming_install.is_none());
+        assert!(app.pending_install.is_none());
+        assert_eq!(app.status_message, "Installation cancelled.");
     }
 }

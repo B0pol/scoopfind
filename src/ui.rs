@@ -2,11 +2,12 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
-use crate::app::{App, Focus};
+use crate::app::{App, ConfirmButton, Focus};
+use crate::models::ScoopPackage;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -21,6 +22,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_search_bar(frame, app, chunks[0]);
     draw_main_content(frame, app, chunks[1]);
     draw_footer(frame, app, chunks[2]);
+
+    if let Some(pkg) = &app.confirming_install {
+        draw_confirm_modal(frame, pkg, app.confirm_button);
+    }
 }
 
 fn draw_search_bar(frame: &mut Frame, app: &App, area: Rect) {
@@ -290,6 +295,12 @@ fn draw_details_panel(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "  (Press <Enter> to install this package directly)",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
 
     // Notes if present
     if let Some(notes) = &pkg.notes {
@@ -308,7 +319,55 @@ fn draw_details_panel(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
-    let help_line = if area.width >= 90 {
+    let help_line = if app.confirming_install.is_some() {
+        if area.width >= 90 {
+            Line::from(vec![
+                Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" / "),
+                Span::styled("<y>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Confirm | "),
+                Span::styled("<Esc>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" / "),
+                Span::styled("<n>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Cancel | "),
+                Span::styled("<Tab>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" / "),
+                Span::styled("<Arrows>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Switch Button "),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Confirm | "),
+                Span::styled("<Esc>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Cancel "),
+            ])
+        }
+    } else if app.focus == Focus::ResultsList || app.focus == Focus::DetailPane {
+        if area.width >= 90 {
+            Line::from(vec![
+                Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Install | "),
+                Span::styled("<Tab>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Focus | "),
+                Span::styled("</>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Search | "),
+                Span::styled("<Ctrl+Cx2>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" / "),
+                Span::styled("/quit", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Exit "),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Install | "),
+                Span::styled("</>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Search | "),
+                Span::styled("/quit", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw(" Exit "),
+            ])
+        }
+    } else if area.width >= 90 {
         Line::from(vec![
             Span::styled("<Enter>", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw(" Search | "),
@@ -362,4 +421,78 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(status_p, footer_chunks[0]);
     frame.render_widget(help_p, footer_chunks[1]);
+}
+
+fn draw_confirm_modal(frame: &mut Frame, pkg: &ScoopPackage, confirm_button: ConfirmButton) {
+    let area = centered_rect(66, 11, frame.area());
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(Span::styled(
+            " 🚀 Confirm Package Installation ",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ));
+
+    let (install_style, cancel_style) = match confirm_button {
+        ConfirmButton::Install => (
+            Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+        ),
+        ConfirmButton::Cancel => (
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+    };
+
+    let install_btn = Span::styled("  [ Install (y/Enter) ]  ", install_style);
+    let cancel_btn = Span::styled("  [ Cancel (n/Esc) ]  ", cancel_style);
+
+    let lines = vec![
+        Line::from(vec![
+            Span::raw("Install package "),
+            Span::styled(&pkg.name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" (v"),
+            Span::styled(&pkg.version, Style::default().fg(Color::Green)),
+            Span::raw(")?"),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("Bucket:  ", Style::default().fg(Color::Yellow)),
+            Span::styled(pkg.bucket_name(), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("Command: ", Style::default().fg(Color::Yellow)),
+            Span::styled(pkg.install_command(), Style::default().fg(Color::Cyan)),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::raw("    "),
+            install_btn,
+            Span::raw("    "),
+            cancel_btn,
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(
+                "Use <Tab>/<Arrows> to switch • <Enter> or 'y' to confirm • <Esc> to cancel",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+    frame.render_widget(paragraph, area);
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let w = width.min(area.width.saturating_sub(2)).max(20);
+    let h = height.min(area.height.saturating_sub(2)).max(6);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    Rect::new(x, y, w, h)
 }
