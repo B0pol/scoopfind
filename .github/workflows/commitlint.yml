@@ -1,0 +1,68 @@
+name: Conventional Commits
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [master, main]
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  pr-title:
+    name: Validate PR Title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR Title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+
+  commits:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commits against .githooks/commit-msg
+        shell: bash
+        run: |
+          chmod +x .githooks/commit-msg
+          
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMITS=$(git log --format="%H" origin/${{ github.base_ref }}..HEAD)
+          else
+            # For branch push, validate the commits in this push
+            COUNT="${{ github.event.commits && toJson(github.event.commits) != '[]' && format('{0}', github.event.commits.length) || '1' }}"
+            COMMITS=$(git log -n "$COUNT" --format="%H")
+          fi
+
+          echo "Validating commits..."
+          for c in $COMMITS; do
+            msg=$(git log -1 --format="%B" "$c")
+            echo "Checking: $(echo "$msg" | head -n 1)"
+            tmpfile=$(mktemp)
+            echo "$msg" > "$tmpfile"
+            .githooks/commit-msg "$tmpfile"
+            rm -f "$tmpfile"
+          done
+          echo "All commit messages adhere to Conventional Commits v1.0.0!"

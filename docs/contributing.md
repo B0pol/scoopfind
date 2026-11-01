@@ -129,6 +129,20 @@ All Git commits in this repository must strictly adhere to the [Conventional Com
   docs: update architecture overview in docs/architecture.md
   ```
 
+### Automated Enforcement
+
+Conventional Commits are enforced both locally and in CI:
+
+1. **Local Git Hook (PowerShell, CMD, Bash):**
+   Activate the repository's tracked hook with a single command:
+   ```powershell
+   git config core.hooksPath .githooks
+   ```
+   Any commit that does not match the specification will be blocked locally with an informative error message.
+
+2. **GitHub Actions CI:**
+   Every Pull Request (title and commit messages) and branch push is automatically validated by `.github/workflows/commitlint.yml`.
+
 ---
 
 ## 📤 Submitting a Pull Request

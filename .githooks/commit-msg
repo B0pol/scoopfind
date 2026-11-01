@@ -1,0 +1,80 @@
+#!/bin/sh
+# Conventional Commits v1.0.0 git commit-msg hook
+# Enforces: <type>[optional scope][!]: <description>
+
+COMMIT_MSG_FILE="$1"
+
+if [ ! -f "$COMMIT_MSG_FILE" ]; then
+    exit 0
+fi
+
+FIRST_LINE=$(head -n 1 "$COMMIT_MSG_FILE")
+
+# Allow merge commits
+case "$FIRST_LINE" in
+    Merge\ *|merge\ *|"Merged "*) exit 0 ;;
+esac
+
+# Allow git revert commits
+case "$FIRST_LINE" in
+    Revert\ *|revert\ *) exit 0 ;;
+esac
+
+# Conventional Commits regex pattern
+# Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9_\-\.\/ ]+\))?!?: [^[:space:]].*$'
+
+if ! echo "$FIRST_LINE" | grep -Eq "$PATTERN"; then
+    echo ""
+    echo "❌ [commit-msg hook] Invalid commit message format!"
+    echo "----------------------------------------------------------------"
+    echo "Your commit message:"
+    echo "  $FIRST_LINE"
+    echo ""
+    echo "Git commits must follow the Conventional Commits v1.0.0 specification:"
+    echo "  <type>[optional scope]: <description>"
+    echo ""
+    echo "Allowed types:"
+    echo "  feat     - A new feature"
+    echo "  fix      - A bug fix"
+    echo "  docs     - Documentation changes"
+    echo "  style    - Formatting, missing semi-colons, etc."
+    echo "  refactor - Code change that neither fixes a bug nor adds a feature"
+    echo "  perf     - Performance improvements"
+    echo "  test     - Adding or correcting tests"
+    echo "  build    - Build system or external dependencies"
+    echo "  ci       - CI/CD configuration files and scripts"
+    echo "  chore    - Maintenance tasks and tooling"
+    echo "  revert   - Reverting a previous commit"
+    echo ""
+    echo "Examples:"
+    echo "  feat(search): add instant query debounce"
+    echo "  fix: handle null pointer in package resolver"
+    echo "  docs(readme): update keybindings table"
+    echo "----------------------------------------------------------------"
+    echo ""
+    exit 1
+fi
+
+# Check: Subject must not end with a period
+if echo "$FIRST_LINE" | grep -Eq '\.$'; then
+    echo ""
+    echo "❌ [commit-msg hook] Commit message subject must NOT end with a period ('.')!"
+    echo "  Your subject: $FIRST_LINE"
+    echo ""
+    exit 1
+fi
+
+# Check: Second line must be blank if body exists
+LINE_COUNT=$(wc -l < "$COMMIT_MSG_FILE")
+if [ "$LINE_COUNT" -gt 1 ]; then
+    SECOND_LINE=$(sed -n '2p' "$COMMIT_MSG_FILE")
+    if [ -n "$SECOND_LINE" ]; then
+        echo ""
+        echo "❌ [commit-msg hook] A blank line is required between the commit subject and body!"
+        echo ""
+        exit 1
+    fi
+fi
+
+exit 0
