@@ -32,17 +32,17 @@ Follow this step-by-step workflow when cutting and publishing a new release:
 
 ### 1. Version Bumping
 - When preparing a release, bump the `version` field in `Cargo.toml`.
-- In `scoop/scoopfind.json`, update the `version` and download URL (`architecture.64bit.url`).
-- Clear the `"hash"` field (`""`) in `scoop/scoopfind.json` (it will be filled after the release archive is built).
+- In `bucket/scoopfind.json` and `scoop/scoopfind.json`, update the `version` and download URL (`architecture.64bit.url`).
+- Clear the `"hash"` field (`""`) in both manifests (it will be filled after the release archive is built).
 
 ### 2. Verification Before Release
 - **Unit and Integration Tests:** Run `cargo test`.
-- **Packaging Dry-Run:** Run `cargo publish --dry-run` to ensure packaging rules, file exclusions (`.cargo`, `AGENTS.md`, `.github`, `scoop`, `docs`), and crates.io publishing requirements pass without errors. (See `docs/releasing.md` for the complete guide).
+- **Packaging Dry-Run:** Run `cargo publish --dry-run` to ensure packaging rules, file exclusions (`.cargo`, `AGENTS.md`, `.github`, `scoop`, `bucket`, `docs`), and crates.io publishing requirements pass without errors. (See `docs/releasing.md` for the complete guide).
 
 ### 3. Git Tagging & Release Automation
 - Commit changes using conventional commits:
   ```bash
-  git add Cargo.toml Cargo.lock scoop/scoopfind.json
+  git add Cargo.toml Cargo.lock bucket/scoopfind.json scoop/scoopfind.json
   git commit -m "chore(release): bump version to vX.Y.Z"
   ```
 - Create and push a git tag `vX.Y.Z`:
@@ -58,8 +58,8 @@ Follow this step-by-step workflow when cutting and publishing a new release:
 
 ### 4. Scoop Manifest Update Post-Release
 - Retrieve the SHA256 hash from the generated release asset (`scoopfind-vX.Y.Z-windows-x64.zip.sha256`) on GitHub Releases.
-- Update the `"hash"` field in `scoop/scoopfind.json` with this SHA256 string.
-- Commit the updated manifest (`chore(scoop): update scoopfind manifest hash for vX.Y.Z`) and push or submit a PR to the target Scoop bucket repository.
+- Update the `"hash"` field in `bucket/scoopfind.json` and `scoop/scoopfind.json` with this SHA256 string.
+- Commit the updated manifests (`chore(scoop): update scoopfind manifest hash for vX.Y.Z`) and push.
 
 ### 5. Crates.io Publishing
 - Once the git release is tagged and pushed:

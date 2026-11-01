@@ -39,13 +39,14 @@ A blazing-fast, modern Terminal User Interface (TUI) package search and pager fo
 
 ### Option 1: Via Scoop (Recommended)
 
-Install directly using the manifest:
+Add this repository as a bucket and install:
 
 ```powershell
-scoop install https://raw.githubusercontent.com/B0pol/scoopfind/master/scoop/scoopfind.json
+scoop bucket add scoopfind https://github.com/B0pol/scoopfind
+scoop install scoopfind
 ```
 
-*(Or if added to a custom bucket or Scoop Extras once accepted: `scoop install scoopfind`)*
+*(Or install directly from the raw manifest URL: `scoop install https://raw.githubusercontent.com/B0pol/scoopfind/master/bucket/scoopfind.json`)*
 
 ### Option 2: Pre-compiled Binary (GitHub Releases)
 
@@ -96,6 +97,8 @@ scoopfind/
 │   ├── models.rs   # Deserialization models, bucket resolver, and relative age formatters
 │   └── ui.rs       # Ratatui split-pane layout, widgets, and dynamic responsive footer
 ├── docs/           # Architecture, contributing, configuration, and releasing guides
+├── bucket/
+│   └── scoopfind.json # Standard Scoop bucket manifest
 ├── scoop/
 │   └── scoopfind.json # Scoop package manifest template
 ├── .cargo/
