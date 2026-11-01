@@ -37,7 +37,7 @@ Follow this step-by-step workflow when cutting and publishing a new release:
 
 ### 2. Verification Before Release
 - **Unit and Integration Tests:** Run `cargo test`.
-- **Packaging Dry-Run:** Run `cargo publish --dry-run` to ensure packaging rules, file exclusions (`.cargo`, `AGENTS.md`, `.github`, `scoop`, `RELEASING.md`), and crates.io publishing requirements pass without errors. (See `RELEASING.md` for the complete guide).
+- **Packaging Dry-Run:** Run `cargo publish --dry-run` to ensure packaging rules, file exclusions (`.cargo`, `AGENTS.md`, `.github`, `scoop`, `docs`), and crates.io publishing requirements pass without errors. (See `docs/releasing.md` for the complete guide).
 
 ### 3. Git Tagging & Release Automation
 - Commit changes using conventional commits:

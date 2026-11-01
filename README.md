@@ -95,6 +95,7 @@ scoopfind/
 │   ├── api.rs      # Azure AI Search client & dynamic fallback key recovery from scoop.sh
 │   ├── models.rs   # Deserialization models, bucket resolver, and relative age formatters
 │   └── ui.rs       # Ratatui split-pane layout, widgets, and dynamic responsive footer
+├── docs/           # Architecture, contributing, configuration, and releasing guides
 ├── scoop/
 │   └── scoopfind.json # Scoop package manifest template
 ├── .cargo/
@@ -102,6 +103,18 @@ scoopfind/
 ├── .github/
 │   └── workflows/  # CI testing and automated GitHub release pipelines
 └── Cargo.toml      # Package metadata & dependency specifications
+```
+
+---
+
+## 📚 Documentation
+
+For in-depth guides and contributor resources, visit the [docs](docs/README.md) directory:
+
+- 🏛️ **[Architecture & Design](docs/architecture.md)** — Deep dive into the event loop, state machine, and self-healing search engine.
+- ⚙️ **[Configuration & Usage](docs/configuration.md)** — CLI arguments, keybindings reference, environment variables, and terminal support.
+- 🤝 **[Contributing Guide](docs/contributing.md)** — Toolchain requirements, dev setup, code style, and Conventional Commits.
+- 🚀 **[Releasing Guide](docs/releasing.md)** — Step-by-step maintainer guide for version bumping and publishing.
 ```
 
 ---

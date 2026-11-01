@@ -10,7 +10,7 @@ homepage = "https://github.com/B0pol/scoopfind"
 readme = "README.md"
 keywords = ["scoop", "tui", "windows", "package-manager", "search"]
 categories = ["command-line-utilities"]
-exclude = [".cargo", "AGENTS.md", ".github", "scoop", "RELEASING.md"]
+exclude = [".cargo", "AGENTS.md", ".github", "scoop", "docs"]
 
 [dependencies]
 anyhow = "1.0.104"

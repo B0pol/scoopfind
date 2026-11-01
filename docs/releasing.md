@@ -131,7 +131,7 @@ cargo publish --dry-run
 > ```powershell
 > cargo package --list
 > ```
-> Unwanted files and directories like `.cargo`, `.github`, `scoop`, `AGENTS.md`, and `RELEASING.md` are excluded via `Cargo.toml` (`package.exclude`).
+> Unwanted files and directories like `.cargo`, `.github`, `scoop`, `AGENTS.md`, and `docs` are excluded via `Cargo.toml` (`package.exclude`).
 
 ---
 
@@ -161,7 +161,7 @@ git push origin "v$VERSION"
 
 ### Step 4: GitHub Actions Release Automation
 
-Pushing the `v*` tag triggers the automated release pipeline in [`.github/workflows/release.yml`](.github/workflows/release.yml):
+Pushing the `v*` tag triggers the automated release pipeline in [`.github/workflows/release.yml`](../.github/workflows/release.yml):
 
 1. **Build:** Runs on `windows-latest` with target `x86_64-pc-windows-msvc`.
 2. **Packaging:**
@@ -265,7 +265,7 @@ Verify the new release is listed at:
 ### 3. Untracked Files Bundled in Crates.io Crate
 - If extra files accidentally get bundled into the package, verify the `exclude` list in `Cargo.toml`:
   ```toml
-  exclude = [".cargo", "AGENTS.md", ".github", "scoop", "RELEASING.md"]
+  exclude = [".cargo", "AGENTS.md", ".github", "scoop", "docs"]
   ```
 - Always preview package contents with `cargo package --list` before running `cargo publish`.
 
