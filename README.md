@@ -6,15 +6,15 @@ A blazing-fast, modern Terminal User Interface (TUI) package search and pager fo
 
 ## ✨ Features
 
-- **100% Online & Zero Indexing:** Queries the official Scoop Azure AI Search API (`scoopsearch.search.windows.net`) in real-time. No local bucket cloning or manual index maintenance required.
-- **Self-Healing API Key:** Uses the official public Azure Query Key by default. If the key ever expires or rotates, `scoopfind` automatically scrapes the latest key from `scoop.sh`'s frontend bundle and transparently retries the query.
-- **Split-Screen Interface:**
-  - **Results List:** Compact package overview displaying package name, version, bucket badge, repository stars, and ultra-short relative age (e.g. `now`, `3h`, `12d`, `2mo`, `1y`).
-  - **Package Details Pane:** Comprehensive manifest information including description, bucket repository, homepage URL, SPDX license, git commit SHA, full UTC update timestamp, and detailed elapsed age (e.g. `2 months 19 days ago`).
-  - **Ready-to-Run Install Command:** Automatically constructs the correct `scoop bucket add <bucket>` and `scoop install <app>` command.
-- **Direct Interactive Install:** Press `<Enter>` on any package to open a confirmation modal and trigger `scoop install` directly without leaving the app.
-- **Non-Blocking Async Architecture:** Powered by `tokio` channels so the Ratatui UI never stutters or freezes during network requests.
-- **Safe Keyboard Navigation:** Double `<Esc>` clears the search query; quitting requires a deliberate double `<Ctrl+C>` or typing `/quit` / `/exit` to prevent accidental exits.
+- **Fast Real-Time Search:** Search across all Scoop buckets instantly with zero local cloning, heavy downloads, or manual index maintenance.
+- **Split-Screen Package Inspection:**
+  - **Results List:** Compact overview displaying package name, version, bucket badge, repository stars, and relative update recency (e.g. `now`, `3h`, `12d`, `2mo`, `1y`).
+  - **Package Details Pane:** Instant inspection of package metadata including description, bucket repository, homepage URL, SPDX license, git commit SHA, and exact update timestamp.
+  - **Ready-to-Run Install Command:** Automatically generates the correct `scoop bucket add <bucket>` and `scoop install <app>` commands.
+- **Direct Interactive Installation:** Press `<Enter>` on any result to open a confirmation prompt and install packages directly without leaving the app.
+- **Vim-Friendly & Intuitive Navigation:** Fluid browsing with arrow keys or vim navigation (`j` / `k`, `g` / `G`), instant search filtering, and seamless pane focus cycling with `<Tab>`.
+- **Safe Exit Safeguards:** Protection against accidental terminations—requires double `<Ctrl+C>` or typing `/quit` / `/exit`, with double `<Esc>` to quickly clear the search query.
+- **Zero Setup & Resilient Connectivity:** Ready to use out-of-the-box with automatic self-healing API connectivity, ensuring queries remain reliable even if upstream service keys rotate.
 
 ---
 

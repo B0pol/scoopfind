@@ -23,3 +23,46 @@ Technical constraints, toolchain learnings, and gotchas for AI agents working on
 ## 3. Verification
 
 - Run `cargo test` before submitting changes (covers API queries, key recovery, navigation, and relative time formatting).
+
+---
+
+## 4. Release & Publishing Workflow
+
+Follow this step-by-step workflow when cutting and publishing a new release:
+
+### 1. Version Bumping
+- When preparing a release, bump the `version` field in `Cargo.toml`.
+- In `scoop/scoopfind.json`, update the `version` and download URL (`architecture.64bit.url`).
+- Clear the `"hash"` field (`""`) in `scoop/scoopfind.json` (it will be filled after the release archive is built).
+
+### 2. Verification Before Release
+- **Unit and Integration Tests:** Run `cargo test`.
+- **Packaging Dry-Run:** Run `cargo publish --dry-run` to ensure packaging rules, file exclusions (`.cargo`, `AGENTS.md`, `.github`, `scoop`, `RELEASING.md`), and crates.io publishing requirements pass without errors. (See `RELEASING.md` for the complete guide).
+
+### 3. Git Tagging & Release Automation
+- Commit changes using conventional commits:
+  ```bash
+  git add Cargo.toml Cargo.lock scoop/scoopfind.json
+  git commit -m "chore(release): bump version to vX.Y.Z"
+  ```
+- Create and push a git tag `vX.Y.Z`:
+  ```bash
+  git tag vX.Y.Z
+  git push origin master && git push origin vX.Y.Z
+  ```
+- **Automated GitHub Release:** Pushing the `v*` tag triggers the GitHub Actions workflow in `.github/workflows/release.yml`:
+  - Builds the optimized release binary targeting `x86_64-pc-windows-msvc`.
+  - Packages `scoopfind.exe`, `README.md`, and `LICENSE` into `scoopfind-vX.Y.Z-windows-x64.zip`.
+  - Computes the SHA256 checksum and outputs it to `scoopfind-vX.Y.Z-windows-x64.zip.sha256`.
+  - Automatically creates a GitHub Release and publishes the zip archive and `.sha256` checksum asset.
+
+### 4. Scoop Manifest Update Post-Release
+- Retrieve the SHA256 hash from the generated release asset (`scoopfind-vX.Y.Z-windows-x64.zip.sha256`) on GitHub Releases.
+- Update the `"hash"` field in `scoop/scoopfind.json` with this SHA256 string.
+- Commit the updated manifest (`chore(scoop): update scoopfind manifest hash for vX.Y.Z`) and push or submit a PR to the target Scoop bucket repository.
+
+### 5. Crates.io Publishing
+- Once the git release is tagged and pushed:
+  ```bash
+  cargo publish
+  ```
