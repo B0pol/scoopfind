@@ -31,7 +31,7 @@ impl ApiClient {
         let api_key = Self::load_cached_key().unwrap_or_else(|| DEFAULT_API_KEY.to_string());
         Self {
             client: reqwest::Client::builder()
-                .user_agent("scoopfind/0.1.0")
+                .user_agent(concat!("scoopfind/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .unwrap_or_default(),
             api_key,

@@ -1,1 +1,7 @@
 /target
+*.zip
+*.sha256
+scoopfind_cached_key.txt
+.vscode/
+.idea/
+*.swp

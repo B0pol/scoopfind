@@ -2,6 +2,15 @@
 name = "scoopfind"
 version = "0.1.0"
 edition = "2024"
+authors = ["B0pol"]
+description = "A blazing-fast, modern TUI package search and pager for Scoop on Windows"
+license = "MIT"
+repository = "https://github.com/B0pol/scoopfind"
+homepage = "https://github.com/B0pol/scoopfind"
+readme = "README.md"
+keywords = ["scoop", "tui", "windows", "package-manager", "search"]
+categories = ["command-line-utilities"]
+exclude = [".cargo", "AGENTS.md", ".github", "scoop"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -13,3 +22,10 @@ reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tokio = { version = "1.53.2", features = ["full"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -12,6 +12,7 @@ A blazing-fast, modern Terminal User Interface (TUI) package search and pager fo
   - **Results List:** Compact package overview displaying package name, version, bucket badge, repository stars, and ultra-short relative age (e.g. `now`, `3h`, `12d`, `2mo`, `1y`).
   - **Package Details Pane:** Comprehensive manifest information including description, bucket repository, homepage URL, SPDX license, git commit SHA, full UTC update timestamp, and detailed elapsed age (e.g. `2 months 19 days ago`).
   - **Ready-to-Run Install Command:** Automatically constructs the correct `scoop bucket add <bucket>` and `scoop install <app>` command.
+- **Direct Interactive Install:** Press `<Enter>` on any package to open a confirmation modal and trigger `scoop install` directly without leaving the app.
 - **Non-Blocking Async Architecture:** Powered by `tokio` channels so the Ratatui UI never stutters or freezes during network requests.
 - **Safe Keyboard Navigation:** Double `<Esc>` clears the search query; quitting requires a deliberate double `<Ctrl+C>` or typing `/quit` / `/exit` to prevent accidental exits.
 
@@ -21,7 +22,7 @@ A blazing-fast, modern Terminal User Interface (TUI) package search and pager fo
 
 | Key | Action |
 | :--- | :--- |
-| `<Enter>` | Execute search against the Azure AI Search index |
+| `<Enter>` | Execute search (Search Bar) / Prompt install (Results & Details) |
 | `<Esc>` | Return focus to the search bar |
 | `<Esc>` (x2 within 500ms) | **Clear** the search bar query |
 | `<Tab>` | Cycle focus: **Search Bar** ⇄ **Results List** ⇄ **Details Pane** |
@@ -34,20 +35,40 @@ A blazing-fast, modern Terminal User Interface (TUI) package search and pager fo
 
 ---
 
-## 🚀 Installation & Building
+## 🚀 Installation
 
-### Prerequisites
+### Option 1: Via Scoop (Recommended)
 
+Install directly using the manifest:
+
+```powershell
+scoop install https://raw.githubusercontent.com/B0pol/scoopfind/master/scoop/scoopfind.json
+```
+
+*(Or if added to a custom bucket or Scoop Extras once accepted: `scoop install scoopfind`)*
+
+### Option 2: Pre-compiled Binary (GitHub Releases)
+
+1. Download the latest `scoopfind-*-windows-x64.zip` from [GitHub Releases](https://github.com/B0pol/scoopfind/releases).
+2. Extract `scoopfind.exe` and place it in your `PATH` (e.g., `~/scoop/shims` or `C:\Windows\System32`).
+
+### Option 3: Via Cargo
+
+```powershell
+cargo install scoopfind
+```
+
+### Option 4: Build from Source
+
+#### Prerequisites
 - [Rust Toolchain](https://rustup.rs) (Rust 2024 / 1.99+)
 - C Linker on Windows:
   - **Option A (Lightweight via Scoop):** `scoop install mingw`
   - **Option B (Microsoft MSVC):** Visual Studio C++ Build Tools (`link.exe`)
 
-### Build from Source
-
 ```powershell
 # Clone the repository
-git clone https://github.com/bopol/scoopfind.git
+git clone https://github.com/B0pol/scoopfind.git
 cd scoopfind
 
 # Run the test suite
@@ -74,9 +95,13 @@ scoopfind/
 │   ├── api.rs      # Azure AI Search client & dynamic fallback key recovery from scoop.sh
 │   ├── models.rs   # Deserialization models, bucket resolver, and relative age formatters
 │   └── ui.rs       # Ratatui split-pane layout, widgets, and dynamic responsive footer
+├── scoop/
+│   └── scoopfind.json # Scoop package manifest template
 ├── .cargo/
 │   └── config.toml # Portable target configuration (x86_64-pc-windows-gnu)
-└── Cargo.toml      # Dependency specifications
+├── .github/
+│   └── workflows/  # CI testing and automated GitHub release pipelines
+└── Cargo.toml      # Package metadata & dependency specifications
 ```
 
 ---
@@ -93,4 +118,4 @@ cargo test
 
 ## 📄 License
 
-MIT
+MIT License - see [LICENSE](LICENSE) for details.
