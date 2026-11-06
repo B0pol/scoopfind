@@ -355,6 +355,22 @@ fn handle_detail_pane_keys(app: &mut App, code: KeyCode) {
     }
 }
 
+#[cfg(windows)]
+pub fn detect_powershell_binary() -> &'static str {
+    detect_powershell_from_path_env(std::env::var_os("PATH"))
+}
+
+pub fn detect_powershell_from_path_env(path_var: Option<std::ffi::OsString>) -> &'static str {
+    if let Some(path_var) = path_var {
+        for dir in std::env::split_paths(&path_var) {
+            if dir.join("pwsh.exe").is_file() {
+                return "pwsh";
+            }
+        }
+    }
+    "powershell"
+}
+
 fn run_scoop_install(pkg: &ScoopPackage, install_cmd: &str) -> anyhow::Result<i32> {
     println!();
     println!("============================================================");
@@ -365,9 +381,17 @@ fn run_scoop_install(pkg: &ScoopPackage, install_cmd: &str) -> anyhow::Result<i3
     println!();
 
     #[cfg(windows)]
-    let mut cmd = std::process::Command::new("powershell");
-    #[cfg(windows)]
-    cmd.args(["-NoLogo", "-ExecutionPolicy", "Bypass", "-Command", install_cmd]);
+    let mut cmd = {
+        let shell = detect_powershell_binary();
+        let mut c = std::process::Command::new(shell);
+        c.args(["-NoLogo", "-ExecutionPolicy", "Bypass", "-Command", install_cmd]);
+        if shell == "powershell" {
+            // Prevent PowerShell 7 environment pollution (PSModulePath) from breaking
+            // Windows PowerShell 5.1 built-in cmdlets such as Get-FileHash.
+            c.env_remove("PSModulePath");
+        }
+        c
+    };
 
     #[cfg(not(windows))]
     let mut cmd = std::process::Command::new("sh");
@@ -439,6 +463,35 @@ mod tests {
     #[test]
     fn test_parse_args_unknown_flag() {
         assert!(parse_args(["scoopfind", "--unknown"]).is_err());
+    }
+
+    #[test]
+    fn test_detect_powershell_fallback() {
+        assert_eq!(detect_powershell_from_path_env(None), "powershell");
+        assert_eq!(
+            detect_powershell_from_path_env(Some(std::ffi::OsString::from(""))),
+            "powershell"
+        );
+    }
+
+    #[test]
+    fn test_detect_powershell_with_pwsh() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "scoopfind_test_pwsh_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let fake_pwsh = temp_dir.join("pwsh.exe");
+        let _ = std::fs::write(&fake_pwsh, b"");
+
+        let result = detect_powershell_from_path_env(Some(temp_dir.clone().into_os_string()));
+        let _ = std::fs::remove_file(&fake_pwsh);
+        let _ = std::fs::remove_dir(&temp_dir);
+
+        assert_eq!(result, "pwsh");
     }
 }
 
