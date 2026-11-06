@@ -58,6 +58,32 @@ pub struct PackageMetadata {
     pub sha: Option<String>,
 }
 
+pub fn is_bucket_installed_at<P: AsRef<std::path::Path>>(bucket: &str, scoop_base: P) -> bool {
+    scoop_base.as_ref().join("buckets").join(bucket).is_dir()
+}
+
+pub fn is_bucket_installed(bucket: &str) -> bool {
+    let scoop_base = std::env::var("SCOOP")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("USERPROFILE").unwrap_or_default();
+            std::path::PathBuf::from(home).join("scoop")
+        });
+
+    if is_bucket_installed_at(bucket, &scoop_base) {
+        return true;
+    }
+
+    let scoop_global = std::env::var("SCOOP_GLOBAL")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let prog_data = std::env::var("ProgramData").unwrap_or_default();
+            std::path::PathBuf::from(prog_data).join("scoop")
+        });
+
+    is_bucket_installed_at(bucket, &scoop_global)
+}
+
 impl ScoopPackage {
     /// Extracts a user-friendly bucket name from the repository URL.
     /// E.g. "https://github.com/ScoopInstaller/Main" -> "main"
@@ -91,21 +117,35 @@ impl ScoopPackage {
         }
     }
 
-    /// Generates the standard Scoop command to add bucket and install the package
-    pub fn install_command(&self) -> String {
+    /// Generates the standard Scoop command to install the package, checking
+    /// whether the required bucket is already added locally to avoid redundant warnings.
+    pub fn install_command_with_bucket_check<F>(&self, is_bucket_present: F) -> String
+    where
+        F: Fn(&str) -> bool,
+    {
         let bucket = self.bucket_name();
-        if self.metadata.official_repository {
+        let bucket_installed = bucket == "main" || is_bucket_present(&bucket);
+
+        if bucket_installed {
             if bucket == "main" {
                 format!("scoop install {}", self.name)
             } else {
-                format!("scoop bucket add {}; scoop install {}/{}", bucket, bucket, self.name)
+                format!("scoop install {}/{}", bucket, self.name)
             }
+        } else if self.metadata.official_repository {
+            format!("scoop bucket add {}; scoop install {}/{}", bucket, bucket, self.name)
         } else {
             format!(
                 "scoop bucket add {} {}; scoop install {}/{}",
                 bucket, self.metadata.repository, bucket, self.name
             )
         }
+    }
+
+    /// Generates the standard Scoop command, automatically verifying if the target bucket
+    /// is already added in the local Scoop environment.
+    pub fn install_command(&self) -> String {
+        self.install_command_with_bucket_check(is_bucket_installed)
     }
 
     /// Parses the ISO 8601 committed timestamp from Azure Search
@@ -277,5 +317,70 @@ mod tests {
             ScoopPackage::format_full_relative_age(now - Duration::days(460), now),
             "1 year 3 months ago"
         );
+    }
+
+    #[test]
+    fn test_install_command_generation() {
+        let mut pkg = ScoopPackage {
+            id: "test-pkg".to_string(),
+            name: "deckcraft".to_string(),
+            version: "0.15.1".to_string(),
+            description: None,
+            homepage: None,
+            license: None,
+            notes: None,
+            metadata: PackageMetadata {
+                repository: "https://github.com/ScoopInstaller/Extras".to_string(),
+                official_repository: true,
+                repository_stars: None,
+                file_path: "bucket/deckcraft.json".to_string(),
+                committed: None,
+                sha: None,
+            },
+        };
+
+        // When bucket "extras" is already installed
+        assert_eq!(
+            pkg.install_command_with_bucket_check(|b| b == "extras"),
+            "scoop install extras/deckcraft"
+        );
+
+        // When bucket "extras" is not yet installed
+        assert_eq!(
+            pkg.install_command_with_bucket_check(|_| false),
+            "scoop bucket add extras; scoop install extras/deckcraft"
+        );
+
+        // Main bucket packages never need bucket add
+        pkg.metadata.repository = "https://github.com/ScoopInstaller/Main".to_string();
+        assert_eq!(
+            pkg.install_command_with_bucket_check(|_| false),
+            "scoop install deckcraft"
+        );
+
+        // Community bucket package
+        pkg.metadata.repository = "https://github.com/custom/mybucket".to_string();
+        pkg.metadata.official_repository = false;
+        assert_eq!(
+            pkg.install_command_with_bucket_check(|b| b == "mybucket"),
+            "scoop install mybucket/deckcraft"
+        );
+        assert_eq!(
+            pkg.install_command_with_bucket_check(|_| false),
+            "scoop bucket add mybucket https://github.com/custom/mybucket; scoop install mybucket/deckcraft"
+        );
+    }
+
+    #[test]
+    fn test_is_bucket_installed_at() {
+        let temp_dir = std::env::temp_dir().join("scoopfind_bucket_test");
+        let buckets_dir = temp_dir.join("buckets");
+        let extras_dir = buckets_dir.join("extras");
+        let _ = std::fs::create_dir_all(&extras_dir);
+
+        assert!(is_bucket_installed_at("extras", &temp_dir));
+        assert!(!is_bucket_installed_at("nonexistent_bucket", &temp_dir));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

@@ -71,8 +71,9 @@ fn draw_search_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // Show blinking/static terminal cursor in search box when focused
     if is_focused {
+        // 1 column for left border + 2 columns for "> " prefix
         frame.set_cursor_position((
-            area.x + 2 + (app.cursor_position as u16) + 2, // "> " prefix is 2 chars + margin
+            area.x + 1 + 2 + (app.cursor_position as u16),
             area.y + 1,
         ));
     }
