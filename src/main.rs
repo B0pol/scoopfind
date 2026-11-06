@@ -3,7 +3,7 @@ pub mod app;
 pub mod models;
 pub mod ui;
 
-use std::io::stdout;
+use std::io::{stdout, Write};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -241,23 +241,50 @@ async fn run_tui(initial_query: Option<String>) -> Result<()> {
             let install_cmd = pkg.install_command();
             let result = run_scoop_install(&pkg, &install_cmd);
 
-            enable_raw_mode()?;
-            execute!(terminal.backend_mut(), EnterAlternateScreen)?;
-            terminal.clear()?;
-
-            // Drain any pending input events from the console
-            while event::poll(Duration::from_millis(0))? {
-                let _ = event::read()?;
-            }
-
             match result {
-                Ok(code) if code == 0 => {
-                    app.status_message = format!("Package '{}' installed successfully!", pkg.name);
-                }
-                Ok(code) => {
-                    app.status_message = format!("Installation of '{}' completed with exit code {}.", pkg.name, code);
+                Ok(install_res) => {
+                    match install_res.action {
+                        PostInstallAction::LaunchAndQuit => {
+                            if let Err(err) = launch_installed_package(&pkg) {
+                                eprintln!("Warning: failed to launch '{}': {:#}", pkg.name, err);
+                            }
+                            app.should_quit = true;
+                            break;
+                        }
+                        PostInstallAction::Quit => {
+                            app.should_quit = true;
+                            break;
+                        }
+                        PostInstallAction::ReturnToApp => {
+                            enable_raw_mode()?;
+                            execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+                            terminal.clear()?;
+
+                            // Drain any pending input events from the console
+                            while event::poll(Duration::from_millis(0))? {
+                                let _ = event::read()?;
+                            }
+
+                            if install_res.exit_code == 0 {
+                                app.status_message = format!("Package '{}' installed successfully!", pkg.name);
+                            } else {
+                                app.status_message = format!(
+                                    "Installation of '{}' completed with exit code {}.",
+                                    pkg.name, install_res.exit_code
+                                );
+                            }
+                        }
+                    }
                 }
                 Err(err) => {
+                    enable_raw_mode()?;
+                    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+                    terminal.clear()?;
+
+                    while event::poll(Duration::from_millis(0))? {
+                        let _ = event::read()?;
+                    }
+
                     app.status_message = format!("Failed to run Scoop installation: {:#}", err);
                 }
             }
@@ -371,7 +398,200 @@ pub fn detect_powershell_from_path_env(path_var: Option<std::ffi::OsString>) -> 
     "powershell"
 }
 
-fn run_scoop_install(pkg: &ScoopPackage, install_cmd: &str) -> anyhow::Result<i32> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostInstallAction {
+    LaunchAndQuit,
+    ReturnToApp,
+    Quit,
+}
+
+pub struct InstallResult {
+    pub exit_code: i32,
+    pub action: PostInstallAction,
+}
+
+pub fn parse_post_install_choice(choice: &str, is_success: bool) -> PostInstallAction {
+    let trimmed = choice.trim();
+    if is_success {
+        match trimmed {
+            "1" | "l" | "L" => PostInstallAction::LaunchAndQuit,
+            "3" | "q" | "Q" => PostInstallAction::Quit,
+            _ => PostInstallAction::ReturnToApp,
+        }
+    } else {
+        match trimmed {
+            "2" | "q" | "Q" => PostInstallAction::Quit,
+            _ => PostInstallAction::ReturnToApp,
+        }
+    }
+}
+
+fn prompt_post_install_action(pkg_name: &str, exit_code: i32) -> PostInstallAction {
+    println!();
+    println!("------------------------------------------------------------");
+    if exit_code == 0 {
+        println!("Package '{}' installed successfully.", pkg_name);
+        println!();
+        println!("Options:");
+        println!("  [1] Launch '{}' and quit", pkg_name);
+        println!("  [2] Return to scoopfind (default)");
+        println!("  [3] Quit scoopfind");
+        println!();
+        print!("Enter choice [1-3] (default 2): ");
+        let _ = stdout().flush();
+
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        parse_post_install_choice(&input, true)
+    } else {
+        println!("Scoop command exited with code {}.", exit_code);
+        println!();
+        println!("Options:");
+        println!("  [1] Return to scoopfind (default)");
+        println!("  [2] Quit scoopfind");
+        println!();
+        print!("Enter choice [1-2] (default 1): ");
+        let _ = stdout().flush();
+
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        parse_post_install_choice(&input, false)
+    }
+}
+
+pub fn find_installed_executable(pkg_name: &str) -> Option<std::path::PathBuf> {
+    let pkg_name_lower = pkg_name.to_lowercase();
+
+    // 1. Check Scoop Start Menu shortcuts: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Scoop Apps
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let shortcuts_dir = std::path::PathBuf::from(appdata)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Scoop Apps");
+
+        if shortcuts_dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&shortcuts_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map_or(false, |ext| ext.eq_ignore_ascii_case("lnk"))
+                    {
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            let stem_lower = stem.to_lowercase();
+                            if stem_lower == pkg_name_lower || stem_lower.contains(&pkg_name_lower) {
+                                return Some(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Check %USERPROFILE%\scoop\apps\<pkg_name>\current\
+    let scoop_base = std::env::var("SCOOP")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("USERPROFILE").unwrap_or_default();
+            std::path::PathBuf::from(home).join("scoop")
+        });
+
+    let current_dir = scoop_base.join("apps").join(pkg_name).join("current");
+    if current_dir.is_dir() {
+        // 2a. Direct match: current/<pkg_name>.exe
+        let direct_exe = current_dir.join(format!("{}.exe", pkg_name));
+        if direct_exe.is_file() {
+            return Some(direct_exe);
+        }
+
+        // 2b. Direct match in bin: current/bin/<pkg_name>.exe
+        let bin_exe = current_dir.join("bin").join(format!("{}.exe", pkg_name));
+        if bin_exe.is_file() {
+            return Some(bin_exe);
+        }
+
+        // 2c. Any other .exe in current/ or current/bin/
+        for dir in [&current_dir, &current_dir.join("bin")] {
+            if dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .map_or(false, |ext| ext.eq_ignore_ascii_case("exe"))
+                        {
+                            let file_name = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or_default()
+                                .to_lowercase();
+                            if !file_name.contains("uninstall") && !file_name.contains("setup") {
+                                return Some(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Check Scoop shims: %USERPROFILE%\scoop\shims\<pkg_name>.exe
+    let shims_dir = scoop_base.join("shims");
+    if shims_dir.is_dir() {
+        let shim_exe = shims_dir.join(format!("{}.exe", pkg_name));
+        if shim_exe.is_file() {
+            return Some(shim_exe);
+        }
+        let shim_cmd = shims_dir.join(format!("{}.cmd", pkg_name));
+        if shim_cmd.is_file() {
+            return Some(shim_cmd);
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&shims_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if stem.to_lowercase().starts_with(&pkg_name_lower) {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+pub fn launch_installed_package(pkg: &ScoopPackage) -> anyhow::Result<()> {
+    let target = find_installed_executable(&pkg.name);
+    let target_str = match &target {
+        Some(path) => path.to_string_lossy().to_string(),
+        None => pkg.name.clone(),
+    };
+
+    println!("Launching '{}'...", target_str);
+
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/c", "start", "", &target_str]);
+    cmd.spawn()?;
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn launch_installed_package(pkg: &ScoopPackage) -> anyhow::Result<()> {
+    println!("Launching '{}'...", pkg.name);
+    std::process::Command::new(&pkg.name).spawn()?;
+    Ok(())
+}
+
+fn run_scoop_install(pkg: &ScoopPackage, install_cmd: &str) -> anyhow::Result<InstallResult> {
     println!();
     println!("============================================================");
     println!(" ScoopFind: Installing {} (v{})", pkg.name, pkg.version);
@@ -405,19 +625,9 @@ fn run_scoop_install(pkg: &ScoopPackage, install_cmd: &str) -> anyhow::Result<i3
     let status = cmd.status()?;
     let exit_code = status.code().unwrap_or(-1);
 
-    println!();
-    println!("------------------------------------------------------------");
-    if exit_code == 0 {
-        println!("Package '{}' installed successfully.", pkg.name);
-    } else {
-        println!("Scoop command exited with code {}.", exit_code);
-    }
-    println!("Press <Enter> to return to scoopfind...");
+    let action = prompt_post_install_action(&pkg.name, exit_code);
 
-    let mut line = String::new();
-    let _ = std::io::stdin().read_line(&mut line);
-
-    Ok(exit_code)
+    Ok(InstallResult { exit_code, action })
 }
 
 #[cfg(test)]
@@ -492,6 +702,35 @@ mod tests {
         let _ = std::fs::remove_dir(&temp_dir);
 
         assert_eq!(result, "pwsh");
+    }
+
+    #[test]
+    fn test_parse_post_install_choice() {
+        // Success scenarios
+        assert_eq!(parse_post_install_choice("1", true), PostInstallAction::LaunchAndQuit);
+        assert_eq!(parse_post_install_choice("l", true), PostInstallAction::LaunchAndQuit);
+        assert_eq!(parse_post_install_choice("L", true), PostInstallAction::LaunchAndQuit);
+        assert_eq!(parse_post_install_choice("2", true), PostInstallAction::ReturnToApp);
+        assert_eq!(parse_post_install_choice("r", true), PostInstallAction::ReturnToApp);
+        assert_eq!(parse_post_install_choice("", true), PostInstallAction::ReturnToApp);
+        assert_eq!(parse_post_install_choice("   ", true), PostInstallAction::ReturnToApp);
+        assert_eq!(parse_post_install_choice("3", true), PostInstallAction::Quit);
+        assert_eq!(parse_post_install_choice("q", true), PostInstallAction::Quit);
+        assert_eq!(parse_post_install_choice("Q", true), PostInstallAction::Quit);
+
+        // Failure scenarios
+        assert_eq!(parse_post_install_choice("1", false), PostInstallAction::ReturnToApp);
+        assert_eq!(parse_post_install_choice("", false), PostInstallAction::ReturnToApp);
+        assert_eq!(parse_post_install_choice("2", false), PostInstallAction::Quit);
+        assert_eq!(parse_post_install_choice("q", false), PostInstallAction::Quit);
+    }
+
+    #[test]
+    fn test_find_installed_executable_fallback() {
+        assert_eq!(find_installed_executable("non_existent_package_xyz_123"), None);
+        if let Some(path) = find_installed_executable("deckcraft") {
+            assert!(path.exists());
+        }
     }
 }
 
